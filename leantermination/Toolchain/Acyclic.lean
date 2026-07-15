@@ -2,10 +2,10 @@ import leantermination.Datastructures.IntegerProgram
 import Mathlib.Data.List.Basic
 import Mathlib.Logic.Function.Basic
 import Mathlib.Logic.Function.Iterate
+import Std.Data.HashMap
 
 open Function
 
--- this is the certificate, that determines if it is acyclic or not.
 /-
 Functionality:
 This is topological ordering: every location receives a level, every sucessor of a transition must
@@ -19,7 +19,7 @@ as this is a correct strict topological order.
 
 abbrev Layering := Nat → Nat
 
--- we use decide, since "<" is Prop.
+-- we use decide, since < is Prop.
 -- checks if the acyclic invariant is given for all edges
 def checkAcyclic (ip : IntegerProgram) (comp : Layering) : Bool :=
   ip.edges.all (fun t => decide (comp t.src < comp t.tgt))
@@ -40,10 +40,8 @@ lemma checkAcyclic_layer_mono {ip : IntegerProgram} {comp : Layering}
   induction p with
   | nil u h => simp [SyntacticPath.length]
   | cons t h p' ih =>
-      -- u = t.src ; p' : SyntacticPath ip t.tgt v ; length = 1 + p'.length
-      have hlt := hedge t h            -- comp t.src < comp t.tgt
+      have hlt := hedge t h
       simp only [SyntacticPath.length]
-      -- goal: comp t.src + (1 + p'.length) ≤ comp v ;  ih: comp t.tgt + p'.length ≤ comp v
       omega
 
 -- soundness of layer certificate proven
@@ -54,22 +52,21 @@ theorem checkAcyclic_sound {ip : IntegerProgram} {comp : Layering}
   have hmono := checkAcyclic_layer_mono (checkAcyclic_edge h) p  -- comp u + p.length ≤ comp u
   omega
 
--- computing the layering
--- bellman-ford relaxation
-private def relaxOnce (edges : List Transition) (comp : Nat → Nat) : Nat → Nat :=
+-- computing the layering (Bellman-Ford-style)
+-- now with HashMap for effiency
+private def relaxOnce (edges : List Transition) (comp : Std.HashMap Nat Nat) :
+    Std.HashMap Nat Nat :=
   edges.foldl
-    (fun c t => Function.update c t.tgt (max (c t.tgt) (c t.src + 1)))
+    (fun c t => c.insert t.tgt (max (c.getD t.tgt 0) (c.getD t.src 0 + 1)))
     comp
 
+-- relax (number of locations + 1) time
+def computeLayering (ip : IntegerProgram) : Layering :=
+  let final := (List.range (ip.locs.length + 1)).foldl
+    (fun comp _ => relaxOnce ip.edges comp) ({} : Std.HashMap Nat Nat)
+  fun i => final.getD i 0
 
--- relax max locations + 1 times
-def computeLayering (ip : IntegerProgram) : Layering := Id.run do
-  let mut comp : Nat → Nat := fun _ => 0
-  for _ in List.range (ip.locs.length + 1) do
-    comp := relaxOnce ip.edges comp
-  return comp
-
--- function that can be called, to determine acyclicity
+-- determining function, whether program is acyclic
 def IntegerProgram.isAcyclic (ip : IntegerProgram) : Bool :=
   checkAcyclic ip (computeLayering ip)
 

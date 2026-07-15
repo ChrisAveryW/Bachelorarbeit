@@ -29,9 +29,5 @@ rev = "v4.31.0-rc1"
 name = "leantermination"
 
 [[lean_exe]]
-name = "main"
-root = "Main"
-
-[[lean_exe]]
 name = "check"
 root = "leantermination.Toolchain.CheckAcyclic"

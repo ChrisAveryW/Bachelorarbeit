@@ -1,41 +1,39 @@
 import leantermination.Parsing.ITSParse
 import leantermination.Parsing.Preparse
-import leantermination.Termination.termination_lasw
 import leantermination.Termination.AcyclicIntegerProgram
-import leantermination.Termination.Acyclic
+import leantermination.Toolchain.Acyclic
+import leantermination.Toolchain.AcyclicUpToSelfLoops
+import leantermination.Toolchain.FarkasSMT
 
 set_option linter.unusedVariables false
 set_option linter.style.longLine false
 
--- @todo make corss platform
-def runZ3 (smt : String) : IO String := do
-  -- write the smt string to a temp file
-  let path := "/tmp/query.smt"
-  IO.FS.writeFile path smt
-  -- run z3 on it
-  let out ← IO.Process.run
-    { cmd  := "z3", args := #[path] }
-  return out
 
-def main_deprecated : IO Unit := do
-  let input ← IO.FS.readFile "leantermination/Data/IntegerPrograms/Badly-Formed/Test3.ari"
+def reportUpToSelfLoops (ip : IntegerProgram) : IO Unit := do
+  if ip.isAcyclicUpToSelfLoops then
+    IO.println "Integer Program is acyclic up to self-loops"
+    let results ← ip.checkSelfLoops
+    if results.isEmpty then
+      IO.println "No self-loops: the program is fully acyclic."
+    else
+      IO.println s!"Querying Z3 for a linear ranking function of each of the {results.length} self-loops:"
+      for (t, r) in results do
+        IO.println s!"  Self-loop at location {t.src}: {r.toString}"
+    let allRank := results.all (fun (_, r) => r == Z3Result.sat)
+    if allRank then
+      IO.println "==> Every self-loop admits a linear ranking function. The program terminates."
+    else
+      IO.println "==> Some self-loop has no linear ranking function; termination could not be proven."
+  else
+    IO.println "==> Program is not acyclic up to self-loops. Result unknown. "
+
+/-- Read an ITS file, parse it, and run the whole acyclic-up-to-self-loops
+    termination pipeline on it. -/
+def checkFileUpToSelfLoops (path : String) : IO Unit := do
+  let input ← IO.FS.readFile path
   match parseITS input with
-  | some its =>
-    IO.println s!"The provided Integer Program is represented like this:"
-    IO.println s!"------------------------------------------------------"
-    IO.println (reprStr its)
-    IO.println s!"------------------------------------------------------"
-    IO.println s!"The provided Integer Program is {(if IntegerProgram.isAcyclic its then "acyclic, thus terminates" else "non-acyclic, thus termination cannot be proven.")}"
-  | none     => IO.println "Failed to parse ITS file"
+  | some ip => reportUpToSelfLoops ip
+  | none    => IO.println "Failed to parse ITS file"
 
-
-def main : IO Unit := do
-  let input ← IO.FS.readFile "leantermination/Data/IntegerPrograms/Well-Formed/Test2.ari"
-  match parseITS input with
-  | some its =>
-    IO.println s!"The provided Integer Program is represented like this:"
-    IO.println s!"------------------------------------------------------"
-    IO.println (reprStr its)
-    IO.println s!"------------------------------------------------------"
-    IO.println s!"The provided Integer Program is {(if IntegerProgram.isAcyclic its then "acyclic, thus terminates" else "non-acyclic, thus termination cannot be proven.")}"
-  | none     => IO.println "Failed to parse ITS file"
+def main : IO Unit :=
+  checkFileUpToSelfLoops "leantermination/Data/IntegerPrograms/Acyclic/Test2.ari"
