@@ -64,11 +64,11 @@ partial def ParsedExpr.toConstraint (e : ParsedExpr) (varMap : Std.HashMap Strin
       pure (Constraint.atom .lt (← a.toExpr varMap) (← b.toExpr varMap))
   -- derived comparisons: translated into not/and/atom combinations
   | .app ">" [a, b] => do
-      pure (Constraint.gt (← b.toExpr varMap) (← a.toExpr varMap))
+      pure (Constraint.gt (← a.toExpr varMap) (← b.toExpr varMap))
   | .app ">=" [a, b] => do
       pure (Constraint.geq (← a.toExpr varMap) (← b.toExpr varMap))
   | .app "<=" [a, b] => do
-      pure (Constraint.leq (← b.toExpr varMap) (← a.toExpr varMap))
+      pure (Constraint.leq (← a.toExpr varMap) (← b.toExpr varMap))
   -- distinct (a, b)  is equal to  ¬(a = b) @todo make a dedicated constraint
   | .app "distinct" [a, b] => do
       pure (Constraint.not (Constraint.atom .eq (← a.toExpr varMap) (← b.toExpr varMap)))

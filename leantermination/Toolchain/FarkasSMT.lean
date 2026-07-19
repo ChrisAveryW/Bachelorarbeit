@@ -481,7 +481,7 @@ deriving Repr
 
 /-- `true` only when a joint certificate was produced *and* independently verified
     (or the location has no self-loops, which is trivially fine). -/
-def LocCheck.isVerified : LocCheck → Bool/plan
+def LocCheck.isVerified : LocCheck → Bool
   | .verified _ => true
   | .noLoops    => true
   | _           => false
