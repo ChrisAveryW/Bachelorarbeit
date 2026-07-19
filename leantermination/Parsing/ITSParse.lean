@@ -2,6 +2,9 @@ import leantermination.Parsing.Preparse
 import leantermination.Datastructures.IntegerProgram
 import Mathlib.Tactic.Tauto
 
+/-!
+Builds a parsed IntegerProgram from preparsed ITS files.
+-/
 
 set_option linter.style.longLine false
 
@@ -13,7 +16,7 @@ def buildLocMap (locations : List String) : Std.HashMap String Nat :=
   let indices := List.range locations.length
   (locations.zip indices).foldl (fun map (name, i) => map.insert name i) {}
 
--- Translate ParsedExpr → Expr
+-- translate ParsedExpr to Expr
 partial def ParsedExpr.toExpr (e : ParsedExpr) (varMap : Std.HashMap String Nat) : Option Expr :=
   match e with
   | .lit n   => some (Expr.lit n)
@@ -35,8 +38,7 @@ partial def ParsedExpr.toExpr (e : ParsedExpr) (varMap : Std.HashMap String Nat)
       | a :: rest  => pure (Expr.mul (← a.toExpr varMap) (← (ParsedExpr.app "*" rest).toExpr varMap))
   | _ => none
 
--- Translate ParsedExpr → Constraint
--- Matches the new Constraint structure: atom, not, and
+-- translate ParsedExpr to Constraint
 partial def ParsedExpr.toConstraint (e : ParsedExpr) (varMap : Std.HashMap String Nat) : Option Constraint :=
   --dbg_trace s!"tc1"
   --dbg_trace s!"tc2: {reprStr e}"
@@ -62,19 +64,18 @@ partial def ParsedExpr.toConstraint (e : ParsedExpr) (varMap : Std.HashMap Strin
       pure (Constraint.atom .lt (← a.toExpr varMap) (← b.toExpr varMap))
   -- derived comparisons: translated into not/and/atom combinations
   | .app ">" [a, b] => do
-      pure (Constraint.atom .lt (← b.toExpr varMap) (← a.toExpr varMap))
+      pure (Constraint.gt (← b.toExpr varMap) (← a.toExpr varMap))
   | .app ">=" [a, b] => do
-      pure (Constraint.not (Constraint.atom .lt (← a.toExpr varMap) (← b.toExpr varMap)))
+      pure (Constraint.geq (← a.toExpr varMap) (← b.toExpr varMap))
   | .app "<=" [a, b] => do
-      pure (Constraint.not (Constraint.atom .lt (← b.toExpr varMap) (← a.toExpr varMap)))
-  -- distinct(a, b)  ↔  ¬(a = b)
+      pure (Constraint.leq (← b.toExpr varMap) (← a.toExpr varMap))
+  -- distinct (a, b)  is equal to  ¬(a = b) @todo make a dedicated constraint
   | .app "distinct" [a, b] => do
       pure (Constraint.not (Constraint.atom .eq (← a.toExpr varMap) (← b.toExpr varMap)))
   | s => dbg_trace s!"toConstraint: {reprStr s}"
   none
 
--- Translate target args → List Update
--- srcArgs gives the variable names (positionally), tgtArgs are the update expressions
+-- translate target args to List Update
 def toUpdates (srcArgs : List String) (tgtArgs : List (Option ParsedExpr))
     (varMap : Std.HashMap String Nat) : Option (List Update) :=
   let indices := List.range srcArgs.length
@@ -86,7 +87,7 @@ def toUpdates (srcArgs : List String) (tgtArgs : List (Option ParsedExpr))
     --dbg_trace s!"\nu2:\n{reprStr expr}\n"
     pure { pv := i, expr }
 
--- Translate a ParsedRule → Transition
+-- translate a parsedRule to Transition
 def ParsedRule.toTransition (r : ParsedRule) (locMap : Std.HashMap String Nat) : Option Transition := do
   --dbg_trace "t1"
   let src ← locMap.get? r.source_location
@@ -103,8 +104,7 @@ def ParsedRule.toTransition (r : ParsedRule) (locMap : Std.HashMap String Nat) :
   --dbg_trace s!"t3: {reprStr guard}"
   pure { src, tgt, guard, update }
 
--- Translate a full ParsedITS → IntegerProgram
--- issue with runtime proof fixed
+-- translate a full ParsedITS to IntegerProgram
 def ParsedITS.toIntegerProgram (its : ParsedITS) : Option IntegerProgram := do
   let locMap := buildLocMap its.locations
   let locs   := List.range its.locations.length
@@ -112,7 +112,7 @@ def ParsedITS.toIntegerProgram (its : ParsedITS) : Option IntegerProgram := do
   let l₀     ← locMap.get? its.entrypoint
   if l₀ != 0 then none
   else
-    -- Decide the invariant at runtime
+    -- decide the invariant at runtime
     if h : ∀ t ∈ edges, t.src ∈ locs ∧ t.tgt ∈ locs then
       some { locs, l₀ := 0, edges, h_edges := h }
     else

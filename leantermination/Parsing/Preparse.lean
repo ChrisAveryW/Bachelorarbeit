@@ -1,13 +1,15 @@
--- Parse ITS ARI-Files
+/-! Parse ITS ARI-Files
+Extractingphase
+-/
 
--- Parsed Structures
+-- parsed structures
 inductive ParsedExpr where
   | var : String → ParsedExpr               -- "X1", "X2", "VAR_XY"
   | lit : Int → ParsedExpr                  -- 3, -5, 0
   | app : String → List ParsedExpr → ParsedExpr   -- (+ e1 e2), (* 3 X1 X3 VAR)
 deriving Repr
 
--- Structure to hold parsed rule information
+-- structure to hold parsed rule information
 structure ParsedRule where
   source_location : String
   source_args : List String
@@ -16,14 +18,16 @@ structure ParsedRule where
   guard : Option ParsedExpr
 deriving Repr
 
--- Structure to hold entire ITS file
+-- structure to hold entire ITS file
 structure ParsedITS where
   rules : List ParsedRule
   entrypoint: String
   locations : List String
 deriving Repr
 
--- Helper Functions
+-- helper functions
+
+
 def topLevelParens (s : String) : List String :=
   let chars := s.toList
   let rec go (chars : List Char) (depth : Nat) (current : String) (acc : List String) : List String :=
@@ -50,7 +54,9 @@ def joinStringList (xs : List String) : String :=
 def toLower (s : String) : String :=
   s.toLower
 
--- Parse Functions
+-- parse functions
+
+
 def normalizeWhitespaceAndCase (s : String) : String :=
   (joinStringList (splitByWhiteSpace s)).toLower
 
@@ -74,7 +80,6 @@ def isConcatOfInts (s : String) : Bool :=
 
 def isLocation (s : String) : Bool :=
   let cleaned := normalizeWhitespaceAndCase s
-  -- check for start and finish tokens
   if !(cleaned.startsWith "(fun") then false
   else if !(cleaned.endsWith "))") then false
   else
@@ -88,7 +93,7 @@ def isLocation (s : String) : Bool :=
     -- rest must start with "(->Int"
     else if !(afterName.startsWith "(->int") then false
     else
-      -- get what between "->Int" and the closing "))"
+      -- get string in between "->Int" and the closing "))"
       let afterArrow := afterName.drop 3  -- drop "(->"
       -- strip the closing "))" from the end
       let inner := afterArrow.dropEnd 2
@@ -130,7 +135,6 @@ def splitArgs (s : String) : List String :=
               go rest (depth - 1) current' acc
         | _ =>
             if c.isWhitespace && depth == 0 then
-              -- flush current token
               let cur := current.trimAscii.toString
               if cur.isEmpty then go rest 0 "" acc
               else go rest 0 "" (acc ++ [cur])
@@ -170,7 +174,7 @@ def is_rule (s : String) : Option ParsedRule :=
   else
     let _inner := (s.trimAscii.toString.drop 5).trimAscii.toString
     let rule := (_inner.dropEnd 1).toString
-    -- Check if there's a :guard keyword
+    -- check if there's a :guard keyword
     let guardKeyword := ":guard"
     let splitByGuard := rule.splitOn guardKeyword
     let ruleWithoutGuard := splitByGuard.getD 0 ""

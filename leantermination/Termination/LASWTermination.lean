@@ -9,6 +9,11 @@ import Mathlib.Algebra.Ring.Defs
 set_option linter.style.longLine false
 set_option linter.style.emptyLine false
 
+/-!
+Following the paper "A Complete Method for the Synthesis of Linear Ranking Functions".
+The main lemma `termination_of_farkas_witness` will be shown.
+-/
+
 namespace LASW
 
 /--
@@ -20,7 +25,7 @@ This is the structure of the paper "A Complete Method for the Synthesis of Linea
 `b : Fin m → ℚ` is the right-hand side vector
 `lambda₁`, `lambda₂` are the nonnegative vectors
 
-`h_1a`, ..., `h_1d` are the conditions that need to hold inoder to ensure the representing integer program terminates.
+`h_1a`, ..., `h_1d` are the conditions that need to hold inorder to ensure the representing integer program terminates.
 -/
 structure FarkasWitness (n m : ℕ) where
   A : Fin m → Fin n → ℚ
@@ -68,7 +73,7 @@ end FarkasWitness
 /--
 Converts an `Env` into a rational vector of length n.
 Indices past the list default to 0, better than Option since this would bload the Option handeling.
-And could be considered as safe, since non-written values wouldn't have any other sensible default.
+And could be considered safe, since non-written values wouldn't have any other sensible default.
 -/
 def Env.toVec (n : ℕ) (env : Env) : Fin n → ℚ :=
   fun i =>
@@ -170,7 +175,6 @@ lemma decrease_on_step
       + (∑ j, w.lambda₂ i * (w.A' i j * x' j)) := by
     intro i
     rw [mul_add, Finset.mul_sum, Finset.mul_sum]
-
   have h_lhs_eq :
       (∑ i, w.lambda₂ i *
         ((∑ j, w.A i j * x j) + (∑ j, w.A' i j * x' j)))
@@ -180,21 +184,17 @@ lemma decrease_on_step
     apply Finset.sum_congr rfl
     intro i _
     exact h_dist i
-
+  -- simplified now through helper lemma
   have h_swap_A := sum_sum_swap_mul w.lambda₂ w.A x
   have h_swap_A' := sum_sum_swap_mul w.lambda₂ w.A' x'
-
   -- λ₂ A' = r by definition of r
   have h_lam2A' : ∀ j, (∑ i, w.lambda₂ i * w.A' i j) = w.r j := by
-    intro j; rfl  -- w.r is defined as exactly this sum
-
+    intro j
+    rfl
   -- λ₂ A = -r, derived from h_1c
-  -- h_1c: ∀ j, ∑ i, λ₂ i * (A i j + A' i j) = 0
   have h_lam2A : ∀ j, (∑ i, w.lambda₂ i * w.A i j) = -w.r j := by
     intro j
     have := w.h_1c j
-    -- this : ∑ i, λ₂ i * (A i j + A' i j) = 0
-    -- split the inner mul-add
     have h_split :
         (∑ i, w.lambda₂ i * (w.A i j + w.A' i j))
         = (∑ i, w.lambda₂ i * w.A i j) + (∑ i, w.lambda₂ i * w.A' i j) := by
@@ -204,34 +204,30 @@ lemma decrease_on_step
       ring
     rw [h_split, h_lam2A' j] at this
     linarith
-
-  -- Apply the two identifications to rewrite both sums
+  -- rewrite both sums
   have h_lhs_final :
     (∑ i, w.lambda₂ i *
       ((∑ j, w.A i j * x j) + (∑ j, w.A' i j * x' j)))
     = (∑ j, (-w.r j) * x j) + (∑ j, w.r j * x' j) := by
     rw [h_lhs_eq, h_swap_A, h_swap_A']
     simp_rw [h_lam2A, h_lam2A']
-
   -- λ₂·b = -δ
   have h_rhs : (∑ i, w.lambda₂ i * w.b i) = -w.delta := by
-    show _ = -(-(∑ i, w.lambda₂ i * w.b i))
+    change _ = -(-(∑ i, w.lambda₂ i * w.b i))
     ring
-
-  -- Pull the minus sign out of the first sum on the LHS
+  -- pull out minus sign
   have h_neg_sum : (∑ j, (-w.r j) * x j) = -(∑ j, w.r j * x j) := by
     rw [← Finset.sum_neg_distrib]
     apply Finset.sum_congr rfl
     intro j _
     ring
-
-  -- Put h_sum, h_lhs_final, h_rhs, h_neg_sum together
+  -- build h_sum, h_lhs_final, h_rhs, h_neg_sum together
   rw [h_lhs_final] at h_sum
   rw [h_neg_sum, h_rhs] at h_sum
-  -- h_sum is now:  -(∑ r j * x j) + (∑ r j * x' j) ≤ -δ
   linarith
 
 /--
+This lemma proves:
 Any loop-eligible state `env` (one that admits a successor) satisfies
 `r · env ≥ δ₀`.
 -/
@@ -240,17 +236,15 @@ lemma bounded_on_loop_state
     (h_repr : w.RepresentsProgram ip)
     (env : Env) (h_loop : ∃ env', SemanticStep ip env env') :
     w.delta₀ ≤ ∑ j, w.r j * Env.toVec n env j := by
-
+  -- variable representation of the paper
   obtain ⟨env', h_step⟩ := h_loop
   set x  : Fin n → ℚ := Env.toVec n env  with hx
   set x' : Fin n → ℚ := Env.toVec n env' with hx'
-    -- ---- Step 1: matrix inequality on every row ----
+    -- matrix inequality on every row
   have h_mat : ∀ i : Fin m,
       (∑ j, w.A i j * x j) + (∑ j, w.A' i j * x' j) ≤ w.b i :=
     step_implies_matrix h_repr h_step
-
-  -- ---- Step 2: nonneg-weighted sum over rows ----
-  -- Multiply row i by λ₁(i) ≥ 0 and sum.
+  -- multiply row i by λ₁(i) ≥ 0 and sum.
   have h_sum :
       (∑ i, w.lambda₁ i *
         ((∑ j, w.A i j * x j) + (∑ j, w.A' i j * x' j)))
@@ -258,7 +252,6 @@ lemma bounded_on_loop_state
     apply Finset.sum_le_sum
     intro i _
     exact mul_le_mul_of_nonneg_left (h_mat i) (w.h_nonneg₁ i)
-
   -- expand λ₁
   have h_dist : ∀ i,
       w.lambda₁ i * ((∑ j, w.A i j * x j) + (∑ j, w.A' i j * x' j))
@@ -266,7 +259,6 @@ lemma bounded_on_loop_state
       + (∑ j, w.lambda₁ i * (w.A' i j * x' j)) := by
     intro i
     rw [mul_add, Finset.mul_sum, Finset.mul_sum]
-
   have h_lhs_eq :
       (∑ i, w.lambda₁ i *
         ((∑ j, w.A i j * x j) + (∑ j, w.A' i j * x' j)))
@@ -276,36 +268,27 @@ lemma bounded_on_loop_state
     apply Finset.sum_congr rfl
     intro i _
     exact h_dist i
-
   have h_expand :
       (∑ i, ∑ j, w.lambda₁ i * (w.A i j * x j))
       + (∑ i, ∑ j, w.lambda₁ i * (w.A' i j * x' j)) ≤ ∑ i, w.lambda₁ i * w.b i := by
       simpa [h_lhs_eq] using h_sum
-
-  -- apply that 1a
-
+  -- now simplified with helper lemma
   have h_swap_A := sum_sum_swap_mul w.lambda₁ w.A x
   have h_swap_A' := sum_sum_swap_mul w.lambda₁ w.A' x'
-
   have h_zero :
       (∑ i, ∑ j, w.lambda₁ i * (w.A i j * x j))
       ≤ ∑ i, w.lambda₁ i * w.b i := by
-    -- The A'-double-sum vanishes because of (1a).
     have hp : (∑ i, ∑ j, w.lambda₁ i * (w.A' i j * x' j)) = 0 := by
       rw [h_swap_A']
-      -- goal: ∑ j, (∑ i, λ₁ i * A' i j) * x' j = 0
       apply Finset.sum_eq_zero
       intro j _
       rw [w.h_1a j, zero_mul]
     rw [hp, add_zero] at h_expand
     exact h_expand
-
-  -- a λ₁A = λ₂A
-  -- (1b): λ₁ A = λ₂ A   (column-wise)
+  -- λ₁A = λ₂A (using 1b)
   have h_eq : ∀ j, (∑ i, w.lambda₁ i * w.A i j) = (∑ i, w.lambda₂ i * w.A i j) := by
     intro j
     have h := w.h_1b j
-    -- h : ∑ i, (λ₁ i - λ₂ i) * A i j = 0
     have h_split :
         (∑ i, (w.lambda₁ i - w.lambda₂ i) * w.A i j)
         = (∑ i, w.lambda₁ i * w.A i j) - (∑ i, w.lambda₂ i * w.A i j) := by
@@ -315,12 +298,10 @@ lemma bounded_on_loop_state
       ring
     rw [h_split] at h
     linarith
-
-  -- (1c): λ₂ A = -r   (column-wise)
+  -- λ₂ A = -r  (using 1c)
   have h_lam2A : ∀ j, (∑ i, w.lambda₂ i * w.A i j) = -w.r j := by
     intro j
     have hc := w.h_1c j
-    -- hc : ∑ i, λ₂ i * (A i j + A' i j) = 0
     have hc_split :
         (∑ i, w.lambda₂ i * (w.A i j + w.A' i j))
         = (∑ i, w.lambda₂ i * w.A i j) + (∑ i, w.lambda₂ i * w.A' i j) := by
@@ -328,48 +309,37 @@ lemma bounded_on_loop_state
       apply Finset.sum_congr rfl
       intro i _
       ring
-    -- ∑ i, λ₂ i * A' i j = r j  (by definition of r)
     have h_lam2A' : (∑ i, w.lambda₂ i * w.A' i j) = w.r j := rfl
     rw [hc_split, h_lam2A'] at hc
     linarith
-  -- Combine: λ₁ A = -r  (column-wise)
+  -- combine to λ₁ A = -r
   have h_lam1A : ∀ j, (∑ i, w.lambda₁ i * w.A i j) = -w.r j := by
     intro j
     rw [h_eq j, h_lam2A j]
-  -- Rewrite h_zero's LHS using the swap, then identify the inner sum with -r.
-  -- h_zero : ∑ i, ∑ j, λ₁ i * (A i j * x j) ≤ ∑ i, λ₁ i * b i
   rw [h_swap_A] at h_zero
-  -- h_zero : ∑ j, (∑ i, λ₁ i * A i j) * x j ≤ ∑ i, λ₁ i * b i
-
-  -- Replace each inner column sum with -r j.
+  -- replace inner sum column
   have h_lhs_r : (∑ j, (∑ i, w.lambda₁ i * w.A i j) * x j)
                = ∑ j, (-w.r j) * x j := by
     apply Finset.sum_congr rfl
     intro j _
     rw [h_lam1A j]
   rw [h_lhs_r] at h_zero
-  -- h_zero : ∑ j, (-r j) * x j ≤ ∑ i, λ₁ i * b i
-
-  -- Pull the minus sign out of the LHS sum.
+  -- pull minus sign out
   have h_neg : (∑ j, (-w.r j) * x j) = -(∑ j, w.r j * x j) := by
     rw [← Finset.sum_neg_distrib]
     apply Finset.sum_congr rfl
     intro j _
     ring
   rw [h_neg] at h_zero
-  -- h_zero : -(∑ j, r j * x j) ≤ ∑ i, λ₁ i * b i
-
-  -- The RHS is -δ₀ by definition of δ₀.
+  -- rhs is -δ₀ by definition of δ₀
   have h_rhs : (∑ i, w.lambda₁ i * w.b i) = -w.delta₀ := by
     unfold FarkasWitness.delta₀
     ring
   rw [h_rhs] at h_zero
-  -- h_zero : -(∑ j, r j * x j) ≤ -δ₀
   linarith
 
-
 /--
-The ranking function ρ from the paper
+The ranking function ρ from the paper.
 -/
 noncomputable def FarkasWitness.rho
     {n m : ℕ} (w : FarkasWitness n m) (ip : IntegerProgram) (env : Env) : ℚ :=
@@ -395,22 +365,13 @@ lemma rho_strict_decrease
     (h_repr : w.RepresentsProgram ip)
     {env env' : Env} (h_step : SemanticStep ip env env') :
     w.rho ip env' ≤ w.rho ip env - w.delta := by
-  -- env is loop-eligible: h_step witnesses a successor.
   have h_env_loop : ∃ e', SemanticStep ip env e' := ⟨env', h_step⟩
-  -- Unfold ρ at both env and env'.
   unfold FarkasWitness.rho
-  -- ρ(env) reduces to r·env since env is loop-eligible.
   rw [if_pos h_env_loop]
-  -- Now case-split on whether env' is loop-eligible.
   by_cases h_env'_loop : ∃ e'', SemanticStep ip env' e''
-  · -- Case 1: env' loop-eligible → ρ(env') = r·env'.
-    rw [if_pos h_env'_loop]
-    -- Goal: ∑ j, r j * (toVec env') ≤ (∑ j, r j * (toVec env)) - δ
+  · rw [if_pos h_env'_loop]
     exact decrease_on_step h_repr h_step
-  · -- Case 2: env' NOT loop-eligible → ρ(env') = δ₀ - δ.
-    rw [if_neg h_env'_loop]
-    -- Goal: δ₀ - δ ≤ (∑ j, r j * (toVec env)) - δ
-    -- Suffices: δ₀ ≤ ∑ j, r j * (toVec env), which is bounded_on_loop_state.
+  · rw [if_neg h_env'_loop]
     have h_bound : w.delta₀ ≤ ∑ j, w.r j * Env.toVec n env j :=
       bounded_on_loop_state h_repr env h_env_loop
     linarith
@@ -440,9 +401,6 @@ lemma rho_lower_bound
       le_trans h_bound (le_add_of_nonneg_right (le_of_lt w.delta_pos))
     simpa
   · rw [if_neg h_env]
-
-
-
 
 /- adr
 This lemma shows us that a well-definied ranking functions (strict decrease, lower bound) result in bound SemanticPaths.

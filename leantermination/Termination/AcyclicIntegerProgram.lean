@@ -1,22 +1,20 @@
-import Mathlib.Data.List.Basic
 import Mathlib.Data.List.Nodup
 import Mathlib.Data.Finset.Basic
 import leantermination.Datastructures.IntegerProgram
-import Mathlib.Data.Finset.Basic
 import Mathlib.Algebra.Polynomial.Basic
 
 set_option linter.style.longLine false
 
 
-/-
-Some helper lemmas about Paths.
+/-!
+Lemmas and theorems to show the resulting theorem `Acyclic_impl_Termination`.
 -/
 
 /--
 This lemma shows that the function `SemanticPath.toSyntactic` preserves length.
 It works by induction over the two cases of a SemanticPath.
 -/
-private lemma SemanticPath.toSyntactic_length {ip : IntegerProgram} {env : Env} {u v : Nat}
+lemma SemanticPath.toSyntactic_length {ip : IntegerProgram} {env : Env} {u v : Nat}
     (p : SemanticPath ip env u v) : p.toSyntactic.length = p.length := by
   induction p with
   | nil _ _ _           => rfl
@@ -27,7 +25,7 @@ private lemma SemanticPath.toSyntactic_length {ip : IntegerProgram} {env : Env} 
 This lemma just changes the interaction of the `SemanticPath.toSyntatctic_length` lemma.
 It doesn't introduce any new knowledge, is more of making this lemma more convenient.
 -/
-private lemma SemanticPath.synatactic_length {ip : IntegerProgram} {env : Env} {u v : Nat}
+lemma SemanticPath.synatactic_length {ip : IntegerProgram} {env : Env} {u v : Nat}
     (p : SemanticPath ip env u v)
     (p' : SyntacticPath ip u v)
     (h_eq : p.toSyntactic = p') :
@@ -40,7 +38,7 @@ This lemma proves that the length of `SyntacticPath` stands in a specific relati
 of visited locations. The number of visited locations is always one more than the path length.
 This is because the path length is defined on the number of transitions.
 -/
-private lemma SyntacticPath.visited_length {ip : IntegerProgram} {u v : Nat}
+lemma SyntacticPath.visited_length {ip : IntegerProgram} {u v : Nat}
     (p : SyntacticPath ip u v) : p.visited.length = p.length + 1 := by
   induction p with
   | nil _ _       => simp only [visited, List.length_cons, List.length_nil, zero_add, length]
@@ -52,7 +50,7 @@ private lemma SyntacticPath.visited_length {ip : IntegerProgram} {u v : Nat}
 This lemma generalizes the `IntegerProgram.h_egdes` invariant to a paths visited locations.
 It works by going inductivley going through the construction of a path.
 -/
-private lemma SyntacticPath.visited_mem {ip : IntegerProgram} {u v : Nat}
+lemma SyntacticPath.visited_mem {ip : IntegerProgram} {u v : Nat}
     (p : SyntacticPath ip u v) : ∀ x ∈ p.visited, x ∈ ip.locs := by
   induction p with
   | nil u hu =>
@@ -75,7 +73,7 @@ private lemma SyntacticPath.visited_mem {ip : IntegerProgram} {u v : Nat}
 This lemma serves as proof helper. It allows other proofs to obtain a (propositional) `SyntacticPath`
 which starts in the same location as the provided path and ends in some location which which is in the among the visited locations.
 -/
-private lemma SyntacticPath.visited_subpath {ip : IntegerProgram} {u v : Nat}
+lemma SyntacticPath.visited_subpath {ip : IntegerProgram} {u v : Nat}
     (p : SyntacticPath ip u v) : ∀ x ∈ p.visited, Nonempty (SyntacticPath ip u x) := by
   induction p with
   | nil u hu =>
@@ -114,7 +112,7 @@ So in short, if we added a new transition t, then we can conclude that if it wer
 was already in the path, then (since we add the transition with cons) there would be a real self loop from
 t.src to t.src resulting in the contradiction that it is acyclic!
 -/
-private lemma SyntacticPath.visited_nodup {ip : IntegerProgram}
+lemma SyntacticPath.visited_nodup {ip : IntegerProgram}
     (h_acyc : IntegerProgram.Acyclic ip) {u v : Nat}
     (p : SyntacticPath ip u v) : p.visited.Nodup := by
   induction p with
@@ -138,7 +136,7 @@ Thus the non-duplicate subset/list has less-than or equal number of elements.
 This lemma is the calculation part of the proof Acyclic → Termination.
 It inferes from a non-duplicate list, that the length must be lessthan or equal to which it is a subset.
 -/
-private lemma nodup_sublist_length {α : Type*} {l ref : List α}
+lemma nodup_sublist_length {α : Type*} {l ref : List α}
     (h_nd : l.Nodup) (h_sub : ∀ x ∈ l, x ∈ ref) : l.length ≤ ref.length := by
   classical
   have h1 : l.length = l.toFinset.card := (List.toFinset_card_of_nodup h_nd).symm
@@ -172,7 +170,7 @@ theorem acyclic_impl_bounded_SyntacticPath
 /--
 This lemma generalizes `acyclic_impl_bound_SyntacticPath` to show that all acyclic integer programs have bound paths, thus terminate.
 -/
-theorem Acayclic_impl_Termination (ip : IntegerProgram) :
+theorem Acyclic_impl_Termination (ip : IntegerProgram) :
     IntegerProgram.Acyclic ip → IntegerProgram.Termination ip := by
   intro h_acyc
   unfold IntegerProgram.Termination
