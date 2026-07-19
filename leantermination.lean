@@ -4,3 +4,8 @@ import leantermination.Parsing.Preparse
 import leantermination.Parsing.ITSParse
 import leantermination.Termination.AcyclicIntegerProgram
 import leantermination.Termination.LASWTermination
+import leantermination.Termination.SelfLoopTermination
+import leantermination.Toolchain.Acyclic
+import leantermination.Toolchain.AcyclicUpToSelfLoops
+import leantermination.Toolchain.CheckAcyclic
+import leantermination.Toolchain.FarkasSMT
