@@ -8,7 +8,6 @@ import Mathlib.Tactic
 open LASW
 
 
-
 namespace IntegerProgram
 -- Todo redundant function, delete
 def selfLoops (ip : IntegerProgram) : List Transition :=
@@ -18,8 +17,9 @@ def AcyclicUpToSelfLoops (ip : IntegerProgram) : Prop :=
   IntegerProgram.Acyclic ip.withoutSelfLoops
 
 -- check if needed, can delete @todo
+-- more modern version in toolchain
 def transition_to_ip (ip : IntegerProgram) (t : Transition)
-    (h_self : t.src = t.tgt) (h_edge : t ∈ ip.edges) : IntegerProgram :=
+    (h_self : t.src = t.tgt) (_ : t ∈ ip.edges) : IntegerProgram :=
   { locs := [t.src],
     l₀ := t.src,
     edges := [t],
@@ -30,14 +30,7 @@ def transition_to_ip (ip : IntegerProgram) (t : Transition)
       simp only [List.mem_cons, List.not_mem_nil, or_false]
       trivial }
 
-/-- The single-location sub-program consisting of **all** self-loops at `l`.
-
-    A Farkas witness for this program certifies that the (possibly disjunctive)
-    loop at `l` terminates. This is the *correct* granularity for the termination
-    theorem: a witness per *individual* self-loop does **not** rule out
-    non-terminating interleavings of several self-loops at the same location
-    (e.g. `x'=x-1,y'=y+1` and `x'=x+1,y'=y-1`, each terminating alone but jointly
-    looping forever). -/
+-- reduces an IP to only keeping self-loops.
 def selfloops_to_ip (ip : IntegerProgram) (l : Nat) : IntegerProgram :=
   { locs := [l],
     l₀ := l,
@@ -49,12 +42,21 @@ def selfloops_to_ip (ip : IntegerProgram) (l : Nat) : IntegerProgram :=
       rw [hsrc, htgt]
       simp }
 
-/-- Membership in the edges of `selfloops_to_ip l`: exactly the self-loops at `l`. -/
 lemma mem_selfloops_to_ip_edges {ip : IntegerProgram} {l : Nat} {t : Transition} :
     t ∈ (ip.selfloops_to_ip l).edges ↔ t ∈ ip.edges ∧ t.src = l ∧ t.tgt = l := by
   simp only [selfloops_to_ip, List.mem_filter, Bool.and_eq_true, beq_iff_eq]
 
 end IntegerProgram
+
+
+def SyntacticPath.castStart {ip : IntegerProgram} {u u' v : Nat}
+    (h : u = u') (p : SyntacticPath ip u v) : SyntacticPath ip u' v := h ▸ p
+
+@[simp] lemma SyntacticPath.castStart_length {ip : IntegerProgram} {u u' v : Nat}
+    (h : u = u') (p : SyntacticPath ip u v) :
+    (SyntacticPath.castStart h p).length = p.length := by
+  subst h
+  rfl
 
 
 namespace SemanticPath
@@ -64,8 +66,6 @@ def usesOnly {ip : IntegerProgram} (t : Transition) :
   | _, _, _, .nil _ _ _ => True
   | _, _, _, .cons _ t' _ _ _ _ p => t' = t ∧ p.usesOnly t
 
-/-- Every step of the path is a self-loop at location `l` (i.e. an edge of
-    `selfloops_to_ip l`). Such a run stays at `l` throughout. -/
 def usesLoopsAt {ip : IntegerProgram} (l : Nat) :
     ∀ {env : Env} {u v : Nat}, SemanticPath ip env u v → Prop
   | _, _, _, .nil _ _ _ => True
@@ -87,24 +87,14 @@ def skeletonProject {ip : IntegerProgram} :
     ∀ {env : Env} {u v : Nat}, SemanticPath ip env u v →
       SyntacticPath ip.withoutSelfLoops u v
   | _, u, _, .nil _ _ h => .nil u (by
-      -- u ∈ ip.locs  →  u ∈ withoutSelfLoops.locs (same locs)
       simpa [IntegerProgram.withoutSelfLoops] using h)
   | _, _, v, .cons env t h_edge hguard env' hupdate p =>
       if hsl : t.src = t.tgt then
-        -- self-loop: skip this step. But its tgt = src, so the recursive
-        -- projection of p (which starts at t.tgt = t.src) lands at the same u.
-        hsl ▸ (skeletonProject p)   -- needs care: rewrite t.tgt = t.src
+        SyntacticPath.castStart hsl.symm (skeletonProject p)
       else
-        -- skeleton edge: keep it. Need t ∈ withoutSelfLoops.edges.
         .cons t (by
-          -- t ∈ ip.edges ∧ t.src ≠ t.tgt  →  t ∈ withoutSelfLoops.edges
           simp only [IntegerProgram.withoutSelfLoops, List.mem_filter, bne_iff_ne]
           exact ⟨h_edge, hsl⟩) (skeletonProject p)
-
-lemma SyntacticPath.length_cast {ip : IntegerProgram} {u u' v : Nat}
-    (h : u = u') (p : SyntacticPath ip u v) :
-    (h ▸ p).length = p.length := by
-  subst h; rfl
 
 lemma skeletonProject_length {ip : IntegerProgram}
     {env : Env} {u v : Nat} (p : SemanticPath ip env u v) :
@@ -115,16 +105,15 @@ lemma skeletonProject_length {ip : IntegerProgram}
       simp only [SemanticPath.skeletonProject, SemanticPath.skeletonSteps]
       split_ifs with hsl
       · simp only [zero_add]
-        rw [SyntacticPath.length_cast]
+        rw [SyntacticPath.castStart_length]
         exact ih
-      · -- skeleton kept: both add 1
-        simp [SyntacticPath.length]
+      · simp [SyntacticPath.length]
         omega
 
 
 end SemanticPath
 
-/-- Length splits into self-loop + skeleton steps. (Provable; see prior scaffold.) -/
+/-- This lemma splits path length into self-loop + skeleton steps -/
 lemma length_eq_selfloop_add_skeleton
     {ip : IntegerProgram} {env : Env} {u v : Nat} (p : SemanticPath ip env u v) :
     p.length = p.selfLoopSteps + p.skeletonSteps := by
@@ -139,40 +128,34 @@ lemma length_eq_selfloop_add_skeleton
       · omega
       · omega
 
-/-- Skeleton steps bounded by number of locations (graph theory). -/
+/-- Skeleton steps bounded by number of locations -/
 lemma skeleton_steps_bounded
     {ip : IntegerProgram} (h_upto : ip.AcyclicUpToSelfLoops)
     {env : Env} {u v : Nat} (p : SemanticPath ip env u v) :
     p.skeletonSteps ≤ ip.locs.length := by
-  -- h_upto : Acyclic withoutSelfLoops
   have h_bound := acyclic_impl_bounded_SyntacticPath h_upto p.skeletonProject
-  -- h_bound : p.skeletonProject.length < withoutSelfLoops.locs.length
   rw [SemanticPath.skeletonProject_length] at h_bound
-  -- withoutSelfLoops.locs = ip.locs (same locs field)
   have h_locs : ip.withoutSelfLoops.locs = ip.locs := rfl
   rw [h_locs] at h_bound
   omega
 
 
-
-/-- Re-index the start location of a semantic path along an equality of locations
-    (the env and end location are untouched). -/
 def SemanticPath.castStart {ip : IntegerProgram} {env : Env} {u u' v : Nat}
     (h : u = u') (p : SemanticPath ip env u v) : SemanticPath ip env u' v := h ▸ p
 
+-- now you simp actually uses this lemma, really fancy
 @[simp] lemma SemanticPath.castStart_length {ip : IntegerProgram} {env : Env}
     {u u' v : Nat} (h : u = u') (p : SemanticPath ip env u v) :
     (SemanticPath.castStart h p).length = p.length := by
-  subst h; rfl
+  subst h
+  rfl
 
 @[simp] lemma SemanticPath.castStart_skeletonSteps {ip : IntegerProgram} {env : Env}
     {u u' v : Nat} (h : u = u') (p : SemanticPath ip env u v) :
     (SemanticPath.castStart h p).skeletonSteps = p.skeletonSteps := by
-  subst h; rfl
+  subst h
+  rfl
 
-/-- A semantic path of `ip` that `usesOnly t` is, step for step, a semantic path
-    of the single-transition program `transition_to_ip t`: convert it to one of
-    the same length. (`t` is a self-loop, so every location on the run is `t.src`.) -/
 private lemma usesOnly_toSingle
     {ip : IntegerProgram} {t : Transition}
     (h_self : t.src = t.tgt) (h_edge : t ∈ ip.edges)
@@ -186,20 +169,15 @@ private lemma usesOnly_toSingle
       exact ⟨.nil t.src env (by simp [IntegerProgram.transition_to_ip]), rfl⟩
   | cons env t' h_edge' hguard env' hupdate p' ih =>
       intro huses
-      -- usesOnly on a cons unfolds to: this step is `t`, and the tail uses only `t`.
       simp only [SemanticPath.usesOnly] at huses
       obtain ⟨ht', hp'⟩ := huses
       subst ht'
       obtain ⟨q, hq⟩ := ih hp'
-      -- Prepend the step `t'` in `transition_to_ip`; the tail starts at `t'.tgt = t'.src`.
       refine ⟨.cons env t' (by simp [IntegerProgram.transition_to_ip]) hguard env' hupdate
                 (SemanticPath.castStart h_self q), ?_⟩
       simp only [SemanticPath.length, SemanticPath.castStart_length, hq]
 
-/-- A self-loop transition `t` with a Farkas witness admits a uniform length
-    bound `N` on every run of `ip` from `env` that uses only `t`. The witness makes
-    `transition_to_ip t` terminate (`termination_of_farkas_witness`); a `usesOnly t`
-    run embeds into that program with the same length, so its bound transfers. -/
+/-- A self-loop transition with farkas lemma is bounded, using the LASWTermination-Lemma. -/
 lemma selfloop_run_bounded
     {ip : IntegerProgram} {t : Transition}
     (h_self : t.src = t.tgt) (h_edge : t ∈ ip.edges)
@@ -215,8 +193,6 @@ lemma selfloop_run_bounded
   rw [← hq]
   exact hN q
 
-/-- A `usesLoopsAt l` run of `ip` is, step for step, a semantic path of the
-    sub-program `selfloops_to_ip l`: convert it to one of the same length. -/
 private lemma usesLoopsAt_toSub
     {ip : IntegerProgram} {l : Nat}
     {env : Env} {u v : Nat} (p : SemanticPath ip env u v) :
@@ -233,16 +209,11 @@ private lemma usesLoopsAt_toSub
       obtain ⟨q, hq⟩ := ih hp'
       have hmem : t ∈ (ip.selfloops_to_ip l).edges :=
         IntegerProgram.mem_selfloops_to_ip_edges.mpr ⟨h_edge, hsrc, htgt⟩
-      -- Prepend the step `t`; re-index its endpoints (`t.src = t.tgt = l`).
       refine ⟨SemanticPath.castStart hsrc
                 (.cons env t hmem hguard env' hupdate
                   (SemanticPath.castStart htgt.symm q)), ?_⟩
       simp only [SemanticPath.castStart_length, SemanticPath.length, hq]
 
-/-- The self-loops at a location `l` with a (single, joint) Farkas witness admit a
-    uniform length bound `N` on every run of `ip` from `env` that stays at `l`. The
-    witness makes `selfloops_to_ip l` terminate; a `usesLoopsAt l` run embeds into
-    that program with the same length, so its bound transfers. -/
 lemma selfloops_run_bounded
     {ip : IntegerProgram} {l : Nat}
     {n m : ℕ} (w : LASW.FarkasWitness n m)
@@ -257,26 +228,17 @@ lemma selfloops_run_bounded
   rw [← hq]
   exact hN q
 
-/-! ### Uniform bound via well-founded recursion on the step relation
-
-Configurations are `(state, location)` pairs; one semantic step is `StepRel`.
-Because each location's self-loops jointly terminate and the skeleton is acyclic,
-the program has no infinite run — i.e. `StepRel` is well-founded (`stepRel_wf`).
-Well-founded recursion over it produces, for every start configuration, a uniform
-bound on path length (`config_length_bounded`); the self-loop count is part of the
-length, giving `total_selfloop_steps_bounded`. -/
-
-/-- A configuration of a run: a state together with the current location. -/
+/-- This is a configuration of a run: a state together with the current location. -/
 abbrev Config := Env × Nat
 
-/-- `PathLenBounded ip e u B`: every semantic path from state `e` at location `u`
-    has length at most `B`. Monotone in `B`. -/
+-- intermediate representation of boundedness/termination
 def PathLenBounded (ip : IntegerProgram) (e : Env) (u : Nat) (B : Nat) : Prop :=
   ∀ {v : Nat} (p : SemanticPath ip e u v), p.length ≤ B
 
 lemma PathLenBounded.mono {ip : IntegerProgram} {e : Env} {u : Nat} {b b' : Nat}
     (h : b ≤ b') (hP : PathLenBounded ip e u b) : PathLenBounded ip e u b' := by
-  intro v p; exact le_trans (hP p) h
+  intro v p
+  exact le_trans (hP p) h
 
 /-- One semantic step between configurations: some enabled edge from `c` to `c'`. -/
 def StepRel (ip : IntegerProgram) (c' c : Config) : Prop :=
@@ -304,7 +266,7 @@ lemma mem_succs {ip : IntegerProgram} {c c' : Config} :
   · rintro ⟨t, ht, hsrc, hperf, htgt⟩
     exact ⟨t, ht, by rw [if_pos hsrc, hperf, Option.map_some, htgt]⟩
 
-/-- A path with no skeleton steps stays at its start location. -/
+/-- Lemma proves: a path with no skeleton steps stays at its start location. -/
 private lemma skeletonSteps_zero_usesLoopsAt {ip : IntegerProgram}
     {e : Env} {u v : Nat} (p : SemanticPath ip e u v) :
     p.skeletonSteps = 0 → p.usesLoopsAt u := by
@@ -319,7 +281,7 @@ private lemma skeletonSteps_zero_usesLoopsAt {ip : IntegerProgram}
       refine ⟨rfl, hsl.symm, ?_⟩
       rw [hsl]; exact ih hk
 
-/-- From `t.perform e = some e'` recover the guard and update facts of the step. -/
+/-- Extracting lemma, to receive guard and update -/
 private lemma perform_eq_some {t : Transition} {e e' : Env}
     (h : t.perform e = some e') :
     Constraint.eval t.guard e = some true ∧ Update.all t.update e = some e' := by
@@ -329,9 +291,9 @@ private lemma perform_eq_some {t : Transition} {e e' : Env}
   | some b =>
       cases b with
       | false => simp [hg] at h
-      | true => simp [hg] at h; exact ⟨rfl, h⟩
+      | true => simp only [hg] at h
+                exact ⟨rfl, h⟩
 
-/-- Number of skeleton steps among run-steps `i, …, i+N-1` of a transition stream. -/
 def runSkelCount (t : ℕ → Transition) (i : Nat) : Nat → Nat
   | 0     => 0
   | N + 1 => (if (t i).src = (t i).tgt then 0 else 1) + runSkelCount t (i + 1) N
@@ -354,9 +316,6 @@ private lemma runSkelCount_eq_zero (t : ℕ → Transition) (i N : Nat)
       rw [runSkelCount, if_pos (hall i (le_refl i)),
         ih (i + 1) (fun k hk => hall k (Nat.le_of_succ_le hk))]
 
-/-- From an infinite run (a transition stream matching a config stream `f`), a
-    semantic path of any length `N` starting at `f i`, whose skeleton-step count is
-    exactly `runSkelCount t i N`. -/
 private lemma run_prefix_path {ip : IntegerProgram} (f : ℕ → Env × Nat) (t : ℕ → Transition)
     (ht : ∀ n, t n ∈ ip.edges)
     (hsrc : ∀ n, (t n).src = (f n).2)
@@ -380,29 +339,28 @@ private lemma run_prefix_path {ip : IntegerProgram} (f : ℕ → Env × Nat) (t 
       · simp only [SemanticPath.castStart_skeletonSteps, SemanticPath.skeletonSteps, hskel',
           runSkelCount]
 
-/-- A monotone, bounded sequence of naturals is eventually constant. -/
+/-- lemma shows that a monotone, bounded sequence of natural numbers is eventually constant. -/
 private lemma exists_eventually_const {c : ℕ → ℕ} {B : ℕ}
     (hmono : Monotone c) (hbd : ∀ N, c N ≤ B) : ∃ M, ∀ N, M ≤ N → c N = c M := by
-  have hne : (Set.range c).Nonempty := ⟨c 0, 0, rfl⟩
-  have hbdd : BddAbove (Set.range c) := ⟨B, by rintro _ ⟨N, rfl⟩; exact hbd N⟩
-  obtain ⟨M, hM⟩ := Nat.sSup_mem hne hbdd
-  refine ⟨M, fun N hN => ?_⟩
-  have h1 : c M ≤ c N := hmono hN
-  have h2 : c N ≤ c M := by rw [hM]; exact le_csSup hbdd ⟨N, rfl⟩
+  by_contra hcon
+  push Not at hcon
+  have step : ∀ M, ∃ N, c M < c N := by
+    intro M
+    obtain ⟨N, hMN, hne⟩ := hcon M
+    exact ⟨N, lt_of_le_of_ne (hmono hMN) (Ne.symm hne)⟩
+  have grow : ∀ k, ∃ N, c 0 + k ≤ c N := by
+    intro k
+    induction k with
+    | zero => exact ⟨0, by omega⟩
+    | succ k ih =>
+        obtain ⟨N, hN⟩ := ih
+        obtain ⟨N', hN'⟩ := step N
+        exact ⟨N', by omega⟩
+  obtain ⟨N, hN⟩ := grow (B + 1)
+  have := hbd N
   omega
 
-/-- The step relation is well-founded: the program has no infinite run. This is the
-    one remaining leaf obligation of the termination proof; it packs the two
-    ingredients — each location's self-loops jointly terminate (`h_witnesses`) and
-    the skeleton is acyclic (`h_upto`).
-
-    Intended proof (classical, via `wellFounded_iff_isEmpty_descending_chain`):
-    an infinite run `f : ℕ → Config` with `StepRel (f (n+1)) (f n)` would, for each
-    `N`, give a semantic path from `f 0` of length `N`; by `skeleton_steps_bounded`
-    its skeleton-step count is `≤ locs.length`. That count is monotone in `N` and
-    bounded, hence eventually constant, so beyond some `M` every step is a self-loop
-    at one fixed location `l`. The tail is then an unbounded self-loop run at `l`,
-    contradicting termination of `selfloops_to_ip l` (`selfloops_run_bounded`). -/
+-- @todo create adr from notes
 lemma stepRel_wf (ip : IntegerProgram)
     (h_witnesses : ∀ l ∈ ip.locs,
         ∃ (n m : ℕ) (w : LASW.FarkasWitness n m),
@@ -413,19 +371,18 @@ lemma stepRel_wf (ip : IntegerProgram)
   refine ⟨fun hchain => ?_⟩
   obtain ⟨f, hf⟩ := hchain
   simp only [StepRel] at hf
-  -- Extract, for each step `n`, the transition `t n` used and its facts.
   choose t htmem hsrc hperf htgt using hf
   have hg : ∀ n, Constraint.eval (t n).guard (f n).1 = some true :=
     fun n => (perform_eq_some (hperf n)).1
   have hu : ∀ n, Update.all (t n).update (f n).1 = some (f (n + 1)).1 :=
     fun n => (perform_eq_some (hperf n)).2
-  -- Skeleton-step count of the length-`N` prefix is `≤ locs.length`.
+  -- skeleton-step count
   have hcount_bd : ∀ N, runSkelCount t 0 N ≤ ip.locs.length := by
     intro N
     obtain ⟨w, p, _, hskel⟩ := run_prefix_path f t htmem hsrc hg hu htgt 0 N
     have := skeleton_steps_bounded h_upto p
     rwa [hskel] at this
-  -- Monotone and bounded ⟹ eventually constant ⟹ eventually only self-loops.
+  -- monotone and bounded -> eventually constant -> eventually only self-loops.
   have hmono : Monotone (runSkelCount t 0) :=
     monotone_nat_of_le_succ (fun N => by rw [runSkelCount_succ]; exact Nat.le_add_right _ _)
   obtain ⟨M, hM⟩ := exists_eventually_const hmono hcount_bd
@@ -437,13 +394,13 @@ lemma stepRel_wf (ip : IntegerProgram)
     by_contra hne
     rw [if_neg hne] at h1
     omega
-  -- Hence the location is fixed after `M`.
+  -- location is fixed after m
   have hloc : ∀ n, M ≤ n → (f n).2 = (f M).2 := by
     intro n hn
     induction n, hn using Nat.le_induction with
     | base => rfl
     | succ k hk ih => rw [← htgt k, ← hself k hk, hsrc k, ih]
-  -- Build an arbitrarily long self-loop run at `l := (f M).2` and contradict its bound.
+  -- build the final contradiction
   set l := (f M).2 with hl
   have hl_mem : l ∈ ip.locs := by
     have := (ip.h_edges (t M) (htmem M)).1; rwa [hsrc M] at this
@@ -455,75 +412,63 @@ lemma stepRel_wf (ip : IntegerProgram)
   rw [hlen] at hle
   omega
 
-/-- The start location of any semantic path is a location of the program. -/
+/-- Lemma shows: that the start location of any semantic path is a location of the program. -/
 lemma pathStart_mem {ip : IntegerProgram} {e : Env} {u v : Nat}
     (p : SemanticPath ip e u v) : u ∈ ip.locs := by
   cases p with
   | nil u e h => exact h
   | cons e t h_edge hguard e' hupdate p' => exact (ip.h_edges t h_edge).1
 
-private lemma le_foldr_max (l : List Nat) : ∀ x ∈ l, x ≤ l.foldr max 0 := by
-  induction l with
-  | nil => intro x hx; simp at hx
-  | cons a t ih =>
-      intro x hx
-      rw [List.foldr_cons]
-      rcases List.mem_cons.mp hx with h | h
-      · subst h; exact le_max_left _ _
-      · exact le_trans (ih x h) (le_max_right _ _)
-
-/-- Turn a per-element bound (`∀ a ∈ l, ∃ B, P a B`) into a single uniform bound,
-    for a `B`-monotone predicate `P` over a finite list. -/
+-- makes bound general
 private lemma finite_choice_max {α : Type*} (l : List α) (P : α → Nat → Prop)
     (hmono : ∀ a {b b' : Nat}, b ≤ b' → P a b → P a b')
     (h : ∀ a ∈ l, ∃ b, P a b) : ∃ B, ∀ a ∈ l, P a B := by
-  classical
-  refine ⟨(l.attach.map (fun a => Classical.choose (h a.1 a.2))).foldr max 0, ?_⟩
-  intro a ha
-  refine hmono a ?_ (Classical.choose_spec (h a ha))
-  apply le_foldr_max
-  exact List.mem_map.mpr ⟨⟨a, ha⟩, List.mem_attach _ _, rfl⟩
+  induction l with
+  | nil =>
+      -- Nothing to bound, so any number works.
+      exact ⟨0, by simp⟩
+  | cons a rest ih =>
+      -- Take a bound for the head and one for the tail, then use the larger of the two.
+      obtain ⟨b, hb⟩ := h a (by simp)
+      obtain ⟨B, hB⟩ := ih (fun x hx => h x (List.mem_cons_of_mem a hx))
+      refine ⟨max b B, ?_⟩
+      intro x hx
+      rcases List.mem_cons.mp hx with rfl | hx
+      · exact hmono x (le_max_left b B) hb
+      · exact hmono x (le_max_right b B) (hB x hx)
 
-/-- Well-founded recursion on `StepRel`: from any configuration, path length is
+/-- Shows well-founded recursion on StepRel: from any configuration, path length is
     uniformly bounded. -/
-lemma config_length_bounded {ip : IntegerProgram} (hwf : WellFounded (StepRel ip))
-    (c0 : Config) : ∃ B, PathLenBounded ip c0.1 c0.2 B := by
-  refine WellFounded.induction (C := fun c => ∃ B, PathLenBounded ip c.1 c.2 B) hwf c0 ?_
+lemma config_length_bounded
+    {ip : IntegerProgram}
+    (hwf : WellFounded (StepRel ip))
+    (c0 : Config) :
+    ∃ B, PathLenBounded ip c0.1 c0.2 B := by
+  refine WellFounded.induction
+    (C := fun c => ∃ B, PathLenBounded ip c.1 c.2 B) hwf c0 ?_
   clear c0
   rintro ⟨e, u⟩ IH
-  -- Bound the successors uniformly using the induction hypothesis.
-  obtain ⟨B0, hB0⟩ := finite_choice_max (succs ip (e, u))
-    (fun c' B => PathLenBounded ip c'.1 c'.2 B)
-    (fun c' => PathLenBounded.mono)
-    (fun c' hc' => IH c' (mem_succs.mp hc'))
-  refine ⟨B0 + 1, ?_⟩
+  -- take the maximum bound over all successors
+  obtain ⟨bound_succ, bound_succ_spec⟩ :=
+    finite_choice_max (succs ip (e, u))
+      (fun c' B => PathLenBounded ip c'.1 c'.2 B)
+      (fun c' => PathLenBounded.mono)
+      (fun c' hc' => IH c' (mem_succs.mp hc'))
+  refine ⟨bound_succ + 1, ?_⟩
   intro v p
   cases p with
-  | nil u e h => simp [SemanticPath.length]
+  | nil _ _ _ =>
+      simp [SemanticPath.length]
   | cons e t h_edge hguard e' hupdate p' =>
-      have hstep : StepRel ip (e', t.tgt) (e, t.src) :=
-        ⟨t, h_edge, rfl, by simp [Transition.perform, hguard, hupdate], rfl⟩
-      have hb : p'.length ≤ B0 := hB0 (e', t.tgt) (mem_succs.mpr hstep) p'
-      simp only [SemanticPath.length]
+      have step_to_succ : StepRel ip (e', t.tgt) (e, t.src) :=
+        ⟨t, h_edge, rfl,
+          by simp [Transition.perform, hguard, hupdate],rfl⟩
+      have succ_bound : p'.length ≤ bound_succ :=
+        bound_succ_spec (e', t.tgt) (mem_succs.mpr step_to_succ) p'
+      simp [SemanticPath.length]
       omega
 
-/-- **The self-loop budget.** Every run from `env` performs at most `B` self-loop
-    steps in total, provided each location's *joint* self-loop program has a Farkas
-    witness (`h_witnesses`) and the skeleton is acyclic (`h_upto`).
 
-    Soundness note: the hypothesis is stated *per location* — a single witness for
-    `selfloops_to_ip l` covering **all** self-loops at `l` — not per individual
-    self-loop. That is essential: individual witnesses do not preclude two
-    self-loops at one location from interleaving into a non-terminating run
-    (`x'=x-1,y'=y+1` ∥ `x'=x+1,y'=y-1`). Under the corrected hypothesis no such
-    joint witness exists, so the statement is sound.
-
-    Proof: `stepRel_wf` gives well-foundedness of the one-step relation on
-    configurations `(state, location)`. `config_length_bounded` turns that into a
-    uniform path-length bound from every start configuration by well-founded
-    recursion (finite branching over `ip.edges` handled by a `foldl max`), and the
-    self-loop count is bounded by the length. The only remaining leaf obligation is
-    `stepRel_wf` itself ("the program has no infinite run"). -/
 lemma total_selfloop_steps_bounded
     {ip : IntegerProgram}
     (h_witnesses : ∀ l ∈ ip.locs,
@@ -533,7 +478,6 @@ lemma total_selfloop_steps_bounded
     (env : Env) :
     ∃ B : Nat, ∀ {u v : Nat} (p : SemanticPath ip env u v), p.selfLoopSteps ≤ B := by
   have hwf := stepRel_wf ip h_witnesses h_upto
-  -- Uniformly bound path length over every start location `u ∈ locs`.
   obtain ⟨B, hB⟩ := finite_choice_max ip.locs (fun u B => PathLenBounded ip env u B)
     (fun u => PathLenBounded.mono)
     (fun u _ => config_length_bounded hwf (env, u))
@@ -553,22 +497,18 @@ theorem terminates_of_selfloops_rank
     (h_upto : IntegerProgram.AcyclicUpToSelfLoops ip) :
     ip.Termination := by
   intro env
-  -- Get the uniform self-loop step bound B for paths from `env`.
+  -- get the uniform self-loop step bound B for paths from env
   obtain ⟨B, hB⟩ := total_selfloop_steps_bounded h_witnesses h_upto env
-  -- The uniform total bound: self-loop budget + skeleton budget.
+  -- the uniform total bound: self-loop + skeleton
   refine ⟨B + ip.locs.length, ?_⟩
   intro u v p
-  -- Decompose the length.
   have h_split : p.length = p.selfLoopSteps + p.skeletonSteps :=
     length_eq_selfloop_add_skeleton p
-  -- Bound each part.
   have h_sl : p.selfLoopSteps ≤ B := hB p
   have h_sk : p.skeletonSteps ≤ ip.locs.length := skeleton_steps_bounded h_upto p
-  -- Combine.
   omega
 
-
--- ## Soundness of the checker
+/-! Soundness of self-loop checker. -/
 
 
 private lemma mem_withoutSelfLoops_edges
@@ -582,22 +522,19 @@ theorem checkAcyclicUpToSelfLoops_sound
     {ip : IntegerProgram} {comp : Layering}
     (h : checkAcyclicUpToSelfLoops ip comp = true) :
     IntegerProgram.AcyclicUpToSelfLoops ip := by
-  -- AcyclicUpToSelfLoops ip  ≡  Acyclic ip.withoutSelfLoops
   unfold IntegerProgram.AcyclicUpToSelfLoops
   apply checkAcyclic_sound (comp := comp)
-  -- remaining goal: checkAcyclic ip.withoutSelfLoops comp = true
   unfold checkAcyclic
   rw [List.all_eq_true]
   intro t ht
   obtain ⟨ht_edge, ht_ne⟩ := mem_withoutSelfLoops_edges ht
-  -- the per-edge disjunction for this (non-self-loop) edge of ip
   have hdisj := (List.all_eq_true.mp h) t ht_edge
   simp only [Bool.or_eq_true, beq_iff_eq, decide_eq_true_eq] at hdisj
   rcases hdisj with heq | hlt
-  · exact absurd heq ht_ne          -- not a self-loop, so this disjunct is impossible
-  · simpa using hlt                 -- hence the layer strictly increases
+  · exact absurd heq ht_ne
+  · simpa using hlt
 
--- soundness, only one way completeness not given
+-- soundness, only one way. completeness not given potential @todo
 theorem IntegerProgram.isAcyclicUpToSelfLoops_sound {ip : IntegerProgram}
     (h : ip.isAcyclicUpToSelfLoops = true) :
     IntegerProgram.AcyclicUpToSelfLoops ip :=

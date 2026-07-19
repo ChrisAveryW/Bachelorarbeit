@@ -2,6 +2,5 @@ import leantermination.Basic
 import leantermination.Datastructures.IntegerProgram
 import leantermination.Parsing.Preparse
 import leantermination.Parsing.ITSParse
-import leantermination.Parsing.Z3Parse
 import leantermination.Termination.AcyclicIntegerProgram
 import leantermination.Termination.LASWTermination
